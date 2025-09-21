@@ -127,6 +127,112 @@ class AddTableWindow(tk.Toplevel):
         self.parent.create_table(table_name, columns)
         self.destroy()
 
+class AddColumnWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.transient(parent)
+        self.parent = parent
+        self.title("Add Column")
+
+        # Column Name
+        ttk.Label(self, text="Column Name:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.name_entry = ttk.Entry(self, width=30)
+        self.name_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        # Column Type
+        ttk.Label(self, text="Data Type:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.type_combo = ttk.Combobox(self, values=["TEXT", "INTEGER", "REAL", "NUMERIC", "BLOB"], width=27)
+        self.type_combo.grid(row=1, column=1, padx=5, pady=5)
+        self.type_combo.set("TEXT")
+
+        # Default Value
+        ttk.Label(self, text="Default Value:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.default_entry = ttk.Entry(self, width=30)
+        self.default_entry.grid(row=2, column=1, padx=5, pady=5)
+
+        # Buttons
+        button_frame = ttk.Frame(self)
+        button_frame.grid(row=3, columnspan=2, pady=10)
+        ttk.Button(button_frame, text="Add", command=self.add).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+    def add(self):
+        name = self.name_entry.get().strip()
+        dtype = self.type_combo.get().strip()
+        default = self.default_entry.get().strip()
+
+        if not name or not dtype:
+            messagebox.showerror("Error", "Column name and type are required.", parent=self)
+            return
+
+        self.parent.execute_add_column(name, dtype, default)
+        self.destroy()
+
+class RenameColumnWindow(tk.Toplevel):
+    def __init__(self, parent, columns):
+        super().__init__(parent)
+        self.transient(parent)
+        self.parent = parent
+        self.title("Rename Column")
+
+        # Old Column Name
+        ttk.Label(self, text="Column to Rename:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.old_name_combo = ttk.Combobox(self, values=columns, width=30, state="readonly")
+        self.old_name_combo.grid(row=0, column=1, padx=5, pady=5)
+        if columns:
+            self.old_name_combo.set(columns[0])
+
+        # New Column Name
+        ttk.Label(self, text="New Column Name:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.new_name_entry = ttk.Entry(self, width=33)
+        self.new_name_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        # Buttons
+        button_frame = ttk.Frame(self)
+        button_frame.grid(row=2, columnspan=2, pady=10)
+        ttk.Button(button_frame, text="Rename", command=self.rename).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+    def rename(self):
+        old_name = self.old_name_combo.get()
+        new_name = self.new_name_entry.get().strip()
+
+        if not old_name or not new_name:
+            messagebox.showerror("Error", "Both old and new column names are required.", parent=self)
+            return
+
+        self.parent.execute_rename_column(old_name, new_name)
+        self.destroy()
+
+class DeleteColumnWindow(tk.Toplevel):
+    def __init__(self, parent, columns):
+        super().__init__(parent)
+        self.transient(parent)
+        self.parent = parent
+        self.title("Delete Column")
+
+        ttk.Label(self, text="Column to Delete:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.column_combo = ttk.Combobox(self, values=columns, width=30, state="readonly")
+        self.column_combo.grid(row=0, column=1, padx=5, pady=5)
+        if columns:
+            self.column_combo.set(columns[0])
+
+        button_frame = ttk.Frame(self)
+        button_frame.grid(row=1, columnspan=2, pady=10)
+        ttk.Button(button_frame, text="Delete", command=self.delete).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+    def delete(self):
+        column_name = self.column_combo.get()
+        if not column_name:
+            messagebox.showerror("Error", "You must select a column to delete.", parent=self)
+            return
+
+        if messagebox.askyesno("Confirm", f"Are you sure you want to delete the column '{column_name}'? This cannot be undone.", parent=self):
+            self.parent.execute_delete_column(column_name)
+
+        self.destroy()
+
 class SQLiteEditor(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -168,6 +274,16 @@ class SQLiteEditor(tk.Tk):
 
         data_frame = ttk.LabelFrame(main_frame, text="Data")
         data_frame.pack(side="left", padx=5, pady=5, fill="both", expand=True)
+
+        column_button_frame = ttk.Frame(data_frame)
+        column_button_frame.pack(pady=5, fill="x")
+
+        self.add_column_button = ttk.Button(column_button_frame, text="Add Column", command=self.add_column)
+        self.add_column_button.pack(side="left", padx=5)
+        self.rename_column_button = ttk.Button(column_button_frame, text="Rename Column", command=self.rename_column)
+        self.rename_column_button.pack(side="left", padx=5)
+        self.delete_column_button = ttk.Button(column_button_frame, text="Delete Column", command=self.delete_column)
+        self.delete_column_button.pack(side="left", padx=5)
 
         self.data_tree = ttk.Treeview(data_frame)
         self.data_tree.pack(fill="both", expand=True)
@@ -426,6 +542,104 @@ class SQLiteEditor(tk.Tk):
             messagebox.showinfo("Success", f"Table '{table_name}' created successfully.")
         except sqlite3.Error as e:
             messagebox.showerror("Error", f"Failed to create table '{table_name}': {e}")
+
+    def add_column(self):
+        selection = self.table_list.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a table first.")
+            return
+        AddColumnWindow(self)
+
+    def execute_add_column(self, col_name, col_type, col_default):
+        selection = self.table_list.curselection()
+        if not selection:
+            return # Should not happen if button is used correctly
+        table_name = self.table_list.get(selection[0])
+
+        sql = f'ALTER TABLE "{table_name}" ADD COLUMN "{col_name}" {col_type}'
+        if col_default:
+            # For default values, strings should be quoted, numbers should not.
+            # A simple check for digits should suffice for this tool's purpose.
+            if col_default.isdigit() or (col_default.startswith('-') and col_default[1:].isdigit()):
+                 sql += f" DEFAULT {col_default}"
+            else:
+                 sql += f" DEFAULT '{col_default}'"
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql)
+            self.conn.commit()
+            self.show_table_data(None) # Refresh data view
+            messagebox.showinfo("Success", f"Column '{col_name}' added to table '{table_name}'.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"Failed to add column: {e}")
+
+    def rename_column(self):
+        selection = self.table_list.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a table first.")
+            return
+
+        # Get current columns from the treeview
+        columns = self.data_tree["columns"]
+        if not columns:
+            messagebox.showwarning("Warning", "No columns found for the selected table.")
+            return
+
+        RenameColumnWindow(self, list(columns))
+
+    def execute_rename_column(self, old_name, new_name):
+        selection = self.table_list.curselection()
+        if not selection:
+            return
+        table_name = self.table_list.get(selection[0])
+
+        sql = f'ALTER TABLE "{table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql)
+            self.conn.commit()
+            self.show_table_data(None) # Refresh data view
+            messagebox.showinfo("Success", f"Column '{old_name}' renamed to '{new_name}'.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"Failed to rename column: {e}")
+
+    def delete_column(self):
+        selection = self.table_list.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a table first.")
+            return
+
+        columns = self.data_tree["columns"]
+        if not columns:
+            messagebox.showwarning("Warning", "No columns found for the selected table.")
+            return
+
+        DeleteColumnWindow(self, list(columns))
+
+    def execute_delete_column(self, column_name):
+        selection = self.table_list.curselection()
+        if not selection:
+            return
+        table_name = self.table_list.get(selection[0])
+
+        sql = f'ALTER TABLE "{table_name}" DROP COLUMN "{column_name}"'
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql)
+            self.conn.commit()
+            self.show_table_data(None) # Refresh data view
+            messagebox.showinfo("Success", f"Column '{column_name}' deleted from table '{table_name}'.")
+        except sqlite3.Error as e:
+            # Provide a more helpful error message if the command is not supported
+            if "no such column" in str(e).lower():
+                 messagebox.showerror("Error", f"Column '{column_name}' does not exist.")
+            elif "near 'DROP'":
+                 messagebox.showerror("Error", f"This version of SQLite may not support DROP COLUMN. Error: {e}")
+            else:
+                 messagebox.showerror("Error", f"Failed to delete column: {e}")
 
 if __name__ == "__main__":
     app = SQLiteEditor()

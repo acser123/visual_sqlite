@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import sqlite3
 
 class RecordWindow(tk.Toplevel):
@@ -37,6 +37,96 @@ class RecordWindow(tk.Toplevel):
         self.parent.save_record(values, self.record)
         self.destroy()
 
+class AddTableWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.transient(parent)
+        self.parent = parent
+        self.title("Add New Table")
+        self.geometry("400x400")
+
+        self.column_widgets = []
+
+        # Main frame
+        main_frame = ttk.Frame(self)
+        main_frame.pack(padx=10, pady=10, fill="both", expand=True)
+
+        # Table Name
+        name_frame = ttk.Frame(main_frame)
+        name_frame.pack(fill="x", pady=5)
+        ttk.Label(name_frame, text="Table Name:").pack(side="left", padx=5)
+        self.table_name_entry = ttk.Entry(name_frame)
+        self.table_name_entry.pack(side="left", fill="x", expand=True, padx=5)
+
+        # Columns Frame
+        columns_outer_frame = ttk.LabelFrame(main_frame, text="Columns")
+        columns_outer_frame.pack(fill="both", expand=True, pady=5)
+
+        self.columns_frame = ttk.Frame(columns_outer_frame)
+        self.columns_frame.pack(fill="both", expand=True)
+
+        # Add/Remove buttons for columns
+        col_button_frame = ttk.Frame(main_frame)
+        col_button_frame.pack(pady=5)
+        ttk.Button(col_button_frame, text="Add Column", command=self.add_column_row).pack(side="left", padx=5)
+        ttk.Button(col_button_frame, text="Remove Column", command=self.remove_column_row).pack(side="left", padx=5)
+
+        # Create/Cancel buttons
+        main_button_frame = ttk.Frame(main_frame)
+        main_button_frame.pack(pady=10, side="bottom")
+        ttk.Button(main_button_frame, text="Create Table", command=self.create_table).pack(side="left", padx=5)
+        ttk.Button(main_button_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+        # Start with one column row
+        self.add_column_row()
+
+    def add_column_row(self):
+        frame = ttk.Frame(self.columns_frame)
+        frame.pack(fill="x", padx=5, pady=2)
+
+        name_label = ttk.Label(frame, text="Name:")
+        name_label.pack(side="left", padx=2)
+        name_entry = ttk.Entry(frame, width=15)
+        name_entry.pack(side="left", padx=2)
+
+        type_label = ttk.Label(frame, text="Type:")
+        type_label.pack(side="left", padx=2)
+        type_combo = ttk.Combobox(frame, values=["TEXT", "INTEGER", "REAL", "NUMERIC", "BLOB"], width=10)
+        type_combo.pack(side="left", padx=2, fill="x", expand=True)
+        type_combo.set("TEXT")
+
+        self.column_widgets.append((frame, name_entry, type_combo))
+
+    def remove_column_row(self):
+        if len(self.column_widgets) > 1:
+            frame, _, _ = self.column_widgets.pop()
+            frame.destroy()
+
+    def create_table(self):
+        table_name = self.table_name_entry.get().strip()
+        if not table_name:
+            messagebox.showerror("Error", "Table name cannot be empty.", parent=self)
+            return
+
+        columns = []
+        for _, name_entry, type_combo in self.column_widgets:
+            col_name = name_entry.get().strip()
+            col_type = type_combo.get().strip()
+            if not col_name:
+                messagebox.showerror("Error", "Column name cannot be empty.", parent=self)
+                return
+            if not col_type:
+                messagebox.showerror("Error", "Column type cannot be empty.", parent=self)
+                return
+            columns.append((col_name, col_type))
+
+        if not columns:
+            messagebox.showerror("Error", "Table must have at least one column.", parent=self)
+            return
+
+        self.parent.create_table(table_name, columns)
+        self.destroy()
+
 class SQLiteEditor(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -65,6 +155,16 @@ class SQLiteEditor(tk.Tk):
         self.table_list = tk.Listbox(schema_frame)
         self.table_list.pack(fill="both", expand=True)
         self.table_list.bind("<<ListboxSelect>>", self.show_table_data)
+
+        schema_button_frame = ttk.Frame(schema_frame)
+        schema_button_frame.pack(pady=5)
+
+        self.add_table_button = ttk.Button(schema_button_frame, text="Add", command=self.add_table)
+        self.add_table_button.pack(side="left", padx=2)
+        self.rename_table_button = ttk.Button(schema_button_frame, text="Rename", command=self.rename_table)
+        self.rename_table_button.pack(side="left", padx=2)
+        self.delete_table_button = ttk.Button(schema_button_frame, text="Delete", command=self.delete_table)
+        self.delete_table_button.pack(side="left", padx=2)
 
         data_frame = ttk.LabelFrame(main_frame, text="Data")
         data_frame.pack(side="left", padx=5, pady=5, fill="both", expand=True)
@@ -238,6 +338,94 @@ class SQLiteEditor(tk.Tk):
                 messagebox.showinfo("Success", "Record added successfully.")
             except sqlite3.Error as e:
                 messagebox.showerror("Error", f"Failed to add record: {e}")
+
+    def delete_table(self):
+        selection = self.table_list.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a table to delete.")
+            return
+
+        table_name = self.table_list.get(selection[0])
+
+        if not messagebox.askyesno("Confirm", f"Are you sure you want to delete the table '{table_name}'? This cannot be undone."):
+            return
+
+        if not self.conn:
+            return
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+            self.conn.commit()
+            self.load_schema()
+            # Clear the data view
+            for i in self.data_tree.get_children():
+                self.data_tree.delete(i)
+            self.data_tree["columns"] = []
+            messagebox.showinfo("Success", f"Table '{table_name}' deleted successfully.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"Failed to delete table '{table_name}': {e}")
+
+    def rename_table(self):
+        selection = self.table_list.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a table to rename.")
+            return
+
+        old_name = self.table_list.get(selection[0])
+
+        new_name = simpledialog.askstring("Rename Table", "Enter new table name:", parent=self)
+
+        if not new_name or new_name.isspace():
+            return
+
+        if not self.conn:
+            return
+
+        cursor = self.conn.cursor()
+        try:
+            # It's important to quote table names to handle spaces and special characters
+            cursor.execute(f'ALTER TABLE "{old_name}" RENAME TO "{new_name}"')
+            self.conn.commit()
+            self.load_schema()
+
+            # Update the listbox selection to the new name if possible
+            for i, item in enumerate(self.table_list.get(0, tk.END)):
+                if item == new_name:
+                    self.table_list.selection_set(i)
+                    self.show_table_data(None)
+                    break
+
+            messagebox.showinfo("Success", f"Table '{old_name}' renamed to '{new_name}' successfully.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"Failed to rename table '{old_name}': {e}")
+
+    def add_table(self):
+        if not self.conn:
+            messagebox.showwarning("Warning", "Please connect to a database first.")
+            return
+        AddTableWindow(self)
+
+    def create_table(self, table_name, columns):
+        if not self.conn:
+            return
+
+        # Quote identifiers to be safe
+        quoted_table_name = f'"{table_name}"'
+        column_defs = []
+        for name, type in columns:
+            column_defs.append(f'"{name}" {type}')
+
+        sql = f"CREATE TABLE {quoted_table_name} ({', '.join(column_defs)})"
+
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(sql)
+            self.conn.commit()
+            self.load_schema()
+            messagebox.showinfo("Success", f"Table '{table_name}' created successfully.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"Failed to create table '{table_name}': {e}")
 
 if __name__ == "__main__":
     app = SQLiteEditor()
